@@ -1,0 +1,7 @@
+[theme]
+# ベースをダークモード調に（あるいはシックな静寂感のある配色に）
+primaryColor = "#D4AF37"          # 格式高いゴールド（ボタンやアクティブタブ用）
+backgroundColor = "#0F172A"       # 深みのあるダークネイビー（宇宙・深層意識をイメージ）
+secondaryBackgroundColor = "#1E293B" # やや明るいネイビー（入力フォームやカードの背景用）
+textColor = "#F8FAFC"             # 視認性の高いオフホワイト
+font = "sans serif"

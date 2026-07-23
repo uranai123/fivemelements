@@ -1,0 +1,120 @@
+{
+    "metadata": {
+        "date": "1981-10-15 05:00",
+        "gender": "女"
+    },
+    "pillars": [
+        {
+            "name": "年",
+            "stem": "辛",
+            "stem_hensei": "正財",
+            "branch": "酉",
+            "zokan": "庚",
+            "zokan_hensei": "偏財",
+            "juniun": "死"
+        },
+        {
+            "name": "月",
+            "stem": "戊",
+            "stem_hensei": "食神",
+            "branch": "戌",
+            "zokan": "辛",
+            "zokan_hensei": "正財",
+            "juniun": "墓"
+        },
+        {
+            "name": "日",
+            "stem": "丙",
+            "stem_hensei": "－",
+            "branch": "寅",
+            "zokan": "戊",
+            "zokan_hensei": "食神",
+            "juniun": "長生"
+        },
+        {
+            "name": "時",
+            "stem": "辛",
+            "stem_hensei": "正財",
+            "branch": "卯",
+            "zokan": "甲",
+            "zokan_hensei": "偏印",
+            "juniun": "沐浴"
+        }
+    ],
+    "kuubo": "戌亥",
+    "daun": [
+        {
+            "start_age": 0,
+            "ganzhi": "戊戌",
+            "tenkan_hensei": "食神",
+            "juniun": "墓"
+        },
+        {
+            "start_age": 8,
+            "ganzhi": "己亥",
+            "tenkan_hensei": "傷官",
+            "juniun": "絶"
+        },
+        {
+            "start_age": 18,
+            "ganzhi": "庚子",
+            "tenkan_hensei": "偏財",
+            "juniun": "胎"
+        },
+        {
+            "start_age": 28,
+            "ganzhi": "辛丑",
+            "tenkan_hensei": "正財",
+            "juniun": "養"
+        },
+        {
+            "start_age": 38,
+            "ganzhi": "壬寅",
+            "tenkan_hensei": "偏官",
+            "juniun": "長生"
+        },
+        {
+            "start_age": 48,
+            "ganzhi": "癸卯",
+            "tenkan_hensei": "正官",
+            "juniun": "沐浴"
+        },
+        {
+            "start_age": 58,
+            "ganzhi": "甲辰",
+            "tenkan_hensei": "偏印",
+            "juniun": "冠帯"
+        },
+        {
+            "start_age": 68,
+            "ganzhi": "乙巳",
+            "tenkan_hensei": "印綬",
+            "juniun": "建禄"
+        },
+        {
+            "start_age": 78,
+            "ganzhi": "丙午",
+            "tenkan_hensei": "比肩",
+            "juniun": "帝旺"
+        },
+        {
+            "start_age": 88,
+            "ganzhi": "丁未",
+            "tenkan_hensei": "劫財",
+            "juniun": "衰"
+        }
+    ],
+    "analysis": {
+        "gogyo_balance": {
+            "木": 1.2,
+            "火": 0.5,
+            "土": 1.6,
+            "金": 4.8,
+            "水": 0.0
+        },
+        "day_stem_element": "火",
+        "jitou_score": 1.7,
+        "itau_score": 6.4,
+        "judgment": "身弱"
+    }
+}
