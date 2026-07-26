@@ -27,33 +27,47 @@ st.set_page_config(
     layout="wide"
 )
 
-# 2. 【SEO & モバイル操作性改善】ビューポート＆メタディスクリプション動的インジェクション
+# 2. 【SEO & モバイル操作性改善】全項目ピンチズーム無制限化スクリプト
 seo_and_zoom_script = """
 <script>
-    const doc = window.parent.document;
-    
-    // Viewport制御（スマホでのピンチイン・ズーム許可 & レスポンシブ対応）
-    let viewport = doc.querySelector('meta[name="viewport"]');
-    if (viewport) {
-        viewport.content = 'width=device-width, initial-scale=1.0, user-scalable=yes, maximum-scale=5.0';
-    } else {
-        let meta = doc.createElement('meta');
-        meta.name = 'viewport';
-        meta.content = 'width=device-width, initial-scale=1.0, user-scalable=yes, maximum-scale=5.0';
-        doc.head.appendChild(meta);
+(function() {
+    function forceEnableZoom() {
+        // 自画面・親画面・最上位画面のすべてをターゲットにする
+        const docs = [document];
+        try { if (window.parent && window.parent.document) docs.push(window.parent.document); } catch(e){}
+        try { if (window.top && window.top.document) docs.push(window.top.document); } catch(e){}
+
+        docs.forEach(doc => {
+            if (!doc) return;
+
+            // 1. 既存のズーム制限メタタグを全削除し、ピンチ許可タグを挿入
+            let viewports = doc.querySelectorAll('meta[name="viewport"]');
+            viewports.forEach(v => v.remove());
+
+            let meta = doc.createElement('meta');
+            meta.name = 'viewport';
+            meta.content = 'width=device-width, initial-scale=1.0, minimum-scale=0.2, maximum-scale=5.0, user-scalable=yes';
+            doc.head.appendChild(meta);
+
+            // 2. アプリ全体のタッチ操作制限（touch-action）をCSSで強制解除
+            if (!doc.getElementById('zoom-force-style')) {
+                let style = doc.createElement('style');
+                style.id = 'zoom-force-style';
+                style.innerHTML = `
+                    *, html, body, .stApp, #root, .main, .block-container {
+                        touch-action: auto !important;
+                        -webkit-text-size-adjust: 100% !important;
+                    }
+                `;
+                doc.head.appendChild(style);
+            }
+        });
     }
 
-    // SEO Meta Description 制御
-    let metaDesc = doc.querySelector('meta[name="description"]');
-    const descContent = "五行バランス解析に基づく本格四柱推命・深層鑑定ポータル。命式算出から10年大運、年運流年タイムライン、AI深層鑑定書まで完全無料でご利用いただけます。";
-    if (metaDesc) {
-        metaDesc.content = descContent;
-    } else {
-        let meta = doc.createElement('meta');
-        meta.name = 'description';
-        meta.content = descContent;
-        doc.head.appendChild(meta);
-    }
+    // 初回実行に加え、Streamlitの再描画で上書きされないよう1秒ごとに自動更新
+    forceEnableZoom();
+    setInterval(forceEnableZoom, 1000);
+})();
 </script>
 """
 components.html(seo_and_zoom_script, height=0, width=0)
