@@ -1,13 +1,16 @@
 # -*- coding: utf-8 -*-
 import streamlit as st
+import streamlit.components.v1 as components  # 💡 モバイル・SEO最適化用
 import json
 import os
 import pandas as pd
 import altair as alt
-from datetime import datetime, time, date, timedelta  # 💡 ここに timedelta を追加
-import extra_streamlit_components as stx            # 💡 ここに新ライブラリを追加
+from datetime import datetime, time, date, timedelta
+import extra_streamlit_components as stx
 from google import genai
 from dotenv import load_dotenv
+import base64
+from pathlib import Path
 
 # 既存の計算エンジン・マスターから関数をインポート
 from generate_meishiki5 import get_meishiki_data
@@ -17,12 +20,43 @@ load_dotenv()
 API_KEY = os.getenv("GOOGLE_API_KEY")
 client = genai.Client(api_key=API_KEY) if API_KEY else None
 
-# ページ全体の基本設定
+# 1. ページ全体の基本設定
 st.set_page_config(
-    page_title="四柱推命 鑑定・知識ポータル",
+    page_title="四柱推命 深層鑑定・五行解析ポータル | Five Elements Lab",
     page_icon="🔮",
     layout="wide"
 )
+
+# 2. 【SEO & モバイル操作性改善】ビューポート＆メタディスクリプション動的インジェクション
+seo_and_zoom_script = """
+<script>
+    const doc = window.parent.document;
+    
+    // Viewport制御（スマホでのピンチイン・ズーム許可 & レスポンシブ対応）
+    let viewport = doc.querySelector('meta[name="viewport"]');
+    if (viewport) {
+        viewport.content = 'width=device-width, initial-scale=1.0, user-scalable=yes, maximum-scale=5.0';
+    } else {
+        let meta = doc.createElement('meta');
+        meta.name = 'viewport';
+        meta.content = 'width=device-width, initial-scale=1.0, user-scalable=yes, maximum-scale=5.0';
+        doc.head.appendChild(meta);
+    }
+
+    // SEO Meta Description 制御
+    let metaDesc = doc.querySelector('meta[name="description"]');
+    const descContent = "五行バランス解析に基づく本格四柱推命・深層鑑定ポータル。命式算出から10年大運、年運流年タイムライン、AI深層鑑定書まで完全無料でご利用いただけます。";
+    if (metaDesc) {
+        metaDesc.content = descContent;
+    } else {
+        let meta = doc.createElement('meta');
+        meta.name = 'description';
+        meta.content = descContent;
+        doc.head.appendChild(meta);
+    }
+</script>
+"""
+components.html(seo_and_zoom_script, height=0, width=0)
 
 # --- ⚙️ ユーティリティ・補助関数の定義 ---
 
@@ -55,7 +89,6 @@ def load_spec_text(filepath):
             return f.read()
     return ""
 
-# 🌟 【変更】Gemini提案の自動混雑回避・最適化版ロジックに差し替え
 def generate_fortune_telling_ai(meishiki_json, exam_spec, output_spec):
     """Gemini APIを呼び出して鑑定書を生成する（自動混雑回避・最適化版）"""
     if not client:
@@ -73,14 +106,12 @@ def generate_fortune_telling_ai(meishiki_json, exam_spec, output_spec):
 """
     user_input = f"以下の命式および分析データに基づき、鑑定書を生成してください。\n--- 命式データ ---\n{json.dumps(meishiki_json, ensure_ascii=False, indent=2)}"
     
-    # 実際の混雑状況を踏まえて最適化した優先順位
     model_priority = [
-        "gemini-3.5-flash",       # 1番手：実績のある最新モデル
-        "gemini-2.0-flash",       # 2番手：標準の安定用
-        "gemini-3.1-flash-lite"   # 3番手：究極のセーフティ
+        "gemini-3.5-flash",
+        "gemini-2.0-flash",
+        "gemini-3.1-flash-lite"
     ]
     
-    # サーバーの空き状況を自動判別しながらループ処理
     for model_name in model_priority:
         try:
             full_model_path = f"models/{model_name}"
@@ -99,9 +130,7 @@ def generate_fortune_telling_ai(meishiki_json, exam_spec, output_spec):
             print(f"【システム通知】{model_name} が混雑またはエラーのため、次のモデルに切り替えます。詳細: {e}")
             continue
             
-    # 全てのモデルが全滅した場合の最終セーフティメッセージ
     return "申し訳ありません。現在鑑定サーバーが大変混雑しております。しばらく経ってから再度お試しください。"
-
 
 # --- 🌟 流年（1年ごとの運気）算出用の定義と関数 🌟 ---
 STEMS = ["甲", "乙", "丙", "丁", "戊", "己", "庚", "辛", "壬", "癸"]
@@ -154,7 +183,6 @@ def get_juniun(day_stem, year_branch):
     if not stem_map: return "－"
     return stem_map.get(year_branch, "－")
 
-
 # --- 状態管理（Session State）の初期化 ---
 if "meishiki_result" not in st.session_state:
     st.session_state.meishiki_result = None
@@ -163,7 +191,7 @@ if "ai_appraisal" not in st.session_state:
 if "is_time_unknown" not in st.session_state:
     st.session_state.is_time_unknown = False
 
-# ヘッダーセクション（HTML/CSS）
+# ヘッダーセクション（HTML/CSS・レスポンシブ最適化済）
 st.markdown(
     """
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -212,6 +240,29 @@ st.markdown(
         margin-top:10px; font-weight: 500; text-transform:none;
         transform: translateX(70px);
     }
+
+    @media (max-width: 768px) {
+        .shichu-title-container {
+            padding: 45px 10px 20px 10px;
+        }
+        .shichu-kanzhi-banner {
+            font-size: 10px;
+            letter-spacing: 0.2em;
+        }
+        .shichu-main-title {
+            font-size: 26px !important;
+            letter-spacing: 2px !important;
+        }
+        .shichu-sub-title {
+            font-size: 11.5px !important;
+            letter-spacing: 1.5px !important;
+        }
+        .shichu-lab-text {
+            transform: none !important;
+            text-align: center;
+            margin-top: 6px;
+        }
+    }
     </style>
     <div class="shichu-title-container">
         <div class="shichu-kanzhi-banner">甲・乙・丙・丁・戊・己・庚・辛・壬・癸・子・丑・寅・卯・辰・巳・午・未・申・酉・戌・亥</div>
@@ -224,6 +275,7 @@ st.markdown(
 )
 
 tab_fortune, tab_column, tab_dictionary, tab_about = st.tabs(["✨ 鑑定する", "📚 四柱推命コラム", "📖 知識辞典", "🏛️ 当ラボについて"])
+
 # ==========================================
 # 1. 鑑定する タブ
 # ==========================================
@@ -260,8 +312,6 @@ with tab_fortune:
                         format_func=lambda m: f"{m:02d}分",
                         label_visibility="collapsed"
                     )
-                
-                # datetime.time オブジェクトを自動生成
                 input_time = time(selected_hour, selected_min)
         with col_gender:
             input_gender = st.selectbox("性別", options=["男", "女"], index=1)
@@ -495,17 +545,12 @@ with tab_fortune:
             st.markdown("---")
             st.subheader("🤖 運診診断の実行")
 
-            # ==========================================
-            # 🍪 クッキーによる厳密な24時間利用制限システム
-            # ==========================================
-            
-            # 1. クッキーマネージャーの初期化（session_state安全版）
+            # 🍪 クッキーによる利用制限システム
             if "cookie_manager" not in st.session_state:
                 st.session_state.cookie_manager = stx.CookieManager()
             
             cookie_manager = st.session_state.cookie_stats_manager if "cookie_stats_manager" in st.session_state else st.session_state.cookie_manager
 
-            # 2. ブラウザから過去の利用データを取得
             cookie_data = cookie_manager.get(cookie="fortune_usage_stats")
 
             usage_count = 0
@@ -528,7 +573,6 @@ with tab_fortune:
                 except Exception:
                     pass
 
-            # 3. ユーザーへの利用状況アナウンス（見出しのすぐ下に配置）
             if not can_appraise:
                 st.warning(
                     f"🚫 本日の無料鑑定枠（3回）をすべて消費しました。次の枠は **{reset_at_str}** 以降に復活します。"
@@ -536,7 +580,6 @@ with tab_fortune:
             else:
                 st.info(f"🔮 本日の残り鑑定可能回数: **{3 - usage_count}回** / 3回")
             
-            # 4. 鑑定ボタン（残り回数アナウンスのすぐ下に配置）
             ai_button = st.button(
                 "🔮 仕様書に基づく鑑定書を生成する", 
                 type="secondary", 
@@ -544,7 +587,6 @@ with tab_fortune:
                 disabled=(not API_KEY) or (not can_appraise)
             )
             
-            # 🔒 プライバシー保護の注記
             st.markdown(
                 """
                 <div style="background-color: #111827; border: 1px solid #334155; border-radius: 6px; padding: 12px 15px; margin-top: 10px;">
@@ -557,12 +599,9 @@ with tab_fortune:
                 unsafe_allow_html=True
             )
 
-            # 👇 ここから下をこの1つのブロックにまとめます
             if ai_button and can_appraise:
-                # 🌟 1. プレースホルダーを定義
                 loading_placeholder = st.empty()
                 
-                # 🌟 2. 明滅バナーを流し込む
                 loading_placeholder.markdown(
                     """
                     <div style="background: linear-gradient(135deg, #1E293B 0%, #0F172A 100%); 
@@ -587,7 +626,6 @@ with tab_fortune:
                     unsafe_allow_html=True
                 )
 
-                # 🌟 3. 重い処理に入る前に「0.2秒のタメ」
                 import time
                 time.sleep(0.2)
 
@@ -599,14 +637,12 @@ with tab_fortune:
                     exam_spec = load_spec_text("config/prompt_examination_specification(VOL.13).txt")
                     output_spec = load_spec_text("config/prompt_output_specification.txt")
                     
-                    # 🤖 AI鑑定の実行
                     ai_result = generate_fortune_telling_ai(payload, exam_spec, output_spec)
                     
                     if ai_result.startswith("申し訳ありません"):
                         loading_placeholder.empty() 
                         st.error(ai_result)
                     else:
-                        # 💾 鑑定成功時のクッキー処理
                         new_count = usage_count + 1
                         new_reset_at = datetime.now() + timedelta(days=1) if new_count == 1 else (reset_at if cookie_data else datetime.now() + timedelta(days=1))
 
@@ -642,7 +678,6 @@ with tab_column:
     st.header("📚 深層分析コラム・サバイバル術")
     st.write("四柱推命の思想を現代のライフ戦略や心理学に落とし込み、メタ認知を鍛えるための特製コラムです。")
 
-    # --- 設定データ定義 ---
     COL_CATEGORIES = [
         {"id": "すべて", "emoji": "🗂️", "title": "すべてのコラム", "desc": "現在公開中のすべての知的サバイバルコラムを一覧表示します。"},
         {"id": "🧠 深層心理・自己分析", "emoji": "🧠", "title": "深層心理・自己分析", "desc": "ユング心理学的アプローチで、自らのペルソナと影（シャドウ）を統合する。"},
@@ -709,7 +744,7 @@ with tab_column:
                 
                 with st.expander(f"📄 {title}", expanded=False):
                     st.markdown(load_column_md(filename))
-                    
+                
         elif selected_cat != "すべて":
             st.info(f"「{cat_name}」にはまだ記事がありません。執筆までお待ちください。")
 
@@ -805,10 +840,6 @@ with tab_dictionary:
 # 4. 当ラボについて タブ
 # ==========================================
 with tab_about:
-    import base64
-    from pathlib import Path
-
-    # ロゴ画像の読み込み処理（assets/logo.png）
     logo_path = Path("assets/logo.png")
     logo_b64 = ""
     if logo_path.exists():
