@@ -278,7 +278,11 @@ with tab_fortune:
 
         with st.spinner("計算エンジン駆動中... 命式を算出しています..."):
             try:
-                st.session_state.meishiki_result = get_meishiki_data(target_datetime, gender=input_gender)
+                st.session_state.meishiki_result = get_meishiki_data(
+                    target_datetime, 
+                    gender=input_gender, 
+                    time_unknown=st.session_state.is_time_unknown
+                )
                 st.session_state.ai_appraisal = None
                 st.success("🎉 命式の算出が完了しました！")
             except Exception as e:

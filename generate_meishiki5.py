@@ -18,26 +18,38 @@ def get_meishiki_data(target_date: datetime, gender: str = "男", time_unknown: 
     target_naive = target_date.replace(tzinfo=None) if target_date.tzinfo is not None else target_date
     engine = SolarEngine()
     
-    # 1. 節入り日時の全件取得
-    all_setsuiris = []
-    candidates = []
-    for m_idx in range(12):
-        dt_jst = engine.get_setsuiri_jst(target_date.year, m_idx)
-        if dt_jst:
-            dt_naive = dt_jst.replace(tzinfo=None)
-            all_setsuiris.append(dt_naive)
-            candidates.append({"index": m_idx, "dt": dt_naive})
+    # 1. 前年・当年・翌年の全節入り日時を取得（直前・直後の節入り判定および大運計算用）
+    all_setsuiris_info = []
+    for y in [target_date.year - 1, target_date.year, target_date.year + 1]:
+        for m in range(1, 13):
+            dt_jst = engine.get_setsuiri_jst_by_month(y, m)
+            if dt_jst:
+                dt_naive = dt_jst.replace(tzinfo=None)
+                all_setsuiris_info.append({
+                    "year": y,
+                    "month": m,
+                    "dt": dt_naive
+                })
     
-    # 2. 命式の算出
-    valid_candidates = [c for c in candidates if c["dt"] <= target_naive]
-    valid_candidates.sort(key=lambda x: x["dt"])
-    best_candidate = valid_candidates[-1] if valid_candidates else candidates[0]
+    all_setsuiris_info.sort(key=lambda x: x["dt"])
+    all_setsuiris = [s["dt"] for s in all_setsuiris_info]  # 大運計算用datetimeリスト
+
+    # 2. 当年の立春（2月の節入り）を取得して干支年（四柱推命上の年）を決定
+    this_year_risshun = [s for s in all_setsuiris_info if s["year"] == target_date.year and s["month"] == 2][0]["dt"]
+    kanshi_year = target_date.year - 1 if target_naive < this_year_risshun else target_date.year
+
+    # 3. 入力日時直前の節入りを判定
+    past_setsuiris = [s for s in all_setsuiris_info if s["dt"] <= target_naive]
+    best_candidate = past_setsuiris[-1]
     
-    current_month_idx = best_candidate["index"]
     setuiri_dt = best_candidate["dt"]
     elapsed_days = (target_naive - setuiri_dt).total_seconds() / 86400
 
-    y_stem, y_branch = KanshiEngine.get_year_kanshi(target_date.year)
+    # 月インデックス（0: 寅月, 1: 卯月 ... 11: 丑月）
+    current_month_idx = (best_candidate["month"] - 2) % 12
+
+    # 4. 各柱の干支を算出
+    y_stem, y_branch = KanshiEngine.get_year_kanshi(kanshi_year)
     m_stem, m_branch = KanshiEngine.get_month_kanshi(y_stem, current_month_idx)
     d_stem, d_branch = KanshiEngine.get_day_kanshi(target_naive)
 
@@ -82,11 +94,8 @@ def get_meishiki_data(target_date: datetime, gender: str = "男", time_unknown: 
             "zokan_hensei": zokan_hensei,
             "juniun": stem_juniun
         })
-        
-    # UI側の表示が崩れないよう、時柱不明の場合は「空の時柱データ」をダミーで末尾に追加してあげるのも親切です。
-    # ここでは、pillars_data には純粋に存在する柱だけを持たせ、メタデータに三柱モードであることを記録します。
 
-    # 大運データ（大運は日柱・月柱から算出するため、出生時刻が不明でも計算可能です！）
+    # 5. 大運データ計算
     daun_list = []
     try:
         daun_raw = DaunCalculator.calculate_daun(target_naive, all_setsuiris, gender, y_stem, m_stem, m_branch)
@@ -104,16 +113,16 @@ def get_meishiki_data(target_date: datetime, gender: str = "男", time_unknown: 
         "metadata": {
             "date": target_date.strftime('%Y-%m-%d %H:%M'), 
             "gender": gender,
-            "time_unknown": time_unknown  # 三柱推命フラグを保持
+            "time_unknown": time_unknown
         },
+        "is_time_unknown": time_unknown,  # 👈 ここにトップレベルのフラグを追加
         "pillars": pillars_data,
         "kuubo": kuubo,
         "daun": daun_list
     }
     
-    # --- Phase 2: 深層分析の追加 ---
+    # 6. 深層分析（五行・身強身弱）
     from core.gogyo_engine import GogyoEngine
-    # GogyoEngine が pillars の数を動的に見て計算してくれる設計であれば、このまま渡せば3柱分でスコアを出してくれます。
     analysis = GogyoEngine.analyze_meishiki_gogyo(meishiki_result)
     meishiki_result["analysis"] = analysis
     
@@ -131,15 +140,18 @@ def print_meishiki(data):
         print(f"{p['name']} | {p['stem']}({p['stem_hensei']}) | {p['branch']}({p['zokan']}:{p['zokan_hensei']}) | {p['juniun']}")
     print(f"\n空亡: {data['kuubo']}")
     
-    # 五行・身強身弱の表示
     if "analysis" in data:
         an = data["analysis"]
-        print("\n--- 五行バランス分析 ---")
-        balance_str = " | ".join([f"{k}: {v}" for k, v in an["gogyo_balance"].items()])
-        print(f"五行スコア : {balance_str}")
-        print(f"日干五行   : {an['day_stem_element']}")
-        print(f"エネルギー : 自党(比劫・印星) {an['jitou_score']}  vs  異党(食傷・財・官) {an['itau_score']}")
-        print(f"命式判定   : 【{an['judgment']}】")
+        print("\n--- 五行バランス分析（得点詳細） ---")
+        gogyo_scores = an.get("gogyo_balance", {})
+        
+        # 各五行のスコアを少数点第1位までフォーマットして表示
+        formatted_scores = [f"{k}: {float(v):.1f}点" for k, v in gogyo_scores.items()]
+        print("五行スコア : " + " | ".join(formatted_scores))
+        
+        print(f"日干五行   : {an.get('day_stem_element', '不明')}")
+        print(f"エネルギー : 自党(比劫・印星) {an.get('jitou_score', 0):.1f}点  vs  異党(食傷・財・官) {an.get('itau_score', 0):.1f}点")
+        print(f"命式判定   : 【{an.get('judgment', '不明')}】")
 
     print("\n--- 大運 ---")
     for d in data['daun']:
@@ -152,19 +164,16 @@ if __name__ == "__main__":
     if not os.path.exists("output"):
         os.makedirs("output")
 
-    # テスト1: 通常の四柱推命
-    print("=== テスト1: 四柱推命（時刻あり） ===")
-    target = datetime(1981, 10, 15, 5, 0)
-    meishiki_four = get_meishiki_data(target, gender="女", time_unknown=False)
-    print_meishiki(meishiki_four)
+    # テスト1: 1961年1月4日（立春前）
+    print("=== テスト1: 1961年1月4日（立春前） ===")
+    target1 = datetime(1961, 1, 4, 12, 0)
+    meishiki1 = get_meishiki_data(target1, gender="男", time_unknown=True)
+    print_meishiki(meishiki1)
     
     print("\n" + "="*40 + "\n")
 
-    # テスト2: 出生時刻不明（三柱推命）
-    print("=== テスト2: 三柱推命（時刻不明） ===")
-    meishiki_three = get_meishiki_data(target, gender="女", time_unknown=True)
-    print_meishiki(meishiki_three)
-    
-    # JSON保存（確認用）
-    with open("output/meishiki_data_three_pillars.json", "w", encoding="utf-8") as f:
-        json.dump(meishiki_three, f, ensure_ascii=False, indent=4)
+    # テスト2: 通常の日時
+    print("=== テスト2: 1981年10月15日 ===")
+    target2 = datetime(1981, 10, 15, 5, 0)
+    meishiki2 = get_meishiki_data(target2, gender="女", time_unknown=False)
+    print_meishiki(meishiki2)
