@@ -63,3 +63,16 @@ class SolarEngine:
         if utc_dt is None:
             return None
         return utc_dt.astimezone(ZoneInfo("Asia/Tokyo"))
+
+    def get_setsuiri_jst_by_month(self, year: int, month: int):
+        """
+        指定したカレンダー年と月(1〜12)に対応する節入りのJST日時を取得する
+        （2月=立春(index 0) 〜 1月=小寒(index 11) のマッピング）
+        """
+        # カレンダー月(1〜12)を節入りインデックス(0〜11)に変換
+        if month >= 2:
+            month_index = month - 2
+        else:
+            month_index = 11  # 1月の場合は小寒（index 11）
+            
+        return self.get_setsuiri_jst(year, month_index)
