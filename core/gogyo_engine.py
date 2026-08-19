@@ -32,6 +32,15 @@ class GogyoEngine:
         "子": "水",
     }
 
+    # 各五行に対応する天干（透出チェック用）
+    EL_STEMS = {
+        "木": ["甲", "乙"],
+        "火": ["丙", "丁"],
+        "土": ["戊", "己"],
+        "金": ["庚", "辛"],
+        "水": ["壬", "癸"],
+    }
+
     KOKU_MAP = {"木": "土", "土": "水", "水": "火", "火": "金", "金": "木"}
 
     ZOKAN_DETAIL = {
@@ -72,9 +81,17 @@ class GogyoEngine:
         return "春"
 
     @classmethod
-    def _detect_goka(cls, branches):
+    def _detect_goka(cls, branches, stems=None, month_branch=None):
+        """
+        地支の合化（三会・三合・半合）を判定する。
+        【厳格化条件】
+        - 天干への透出（stems内に該当五行が存在）
+        - または、月令（month_branch）の五行と一致
+        のいずれかを満たす場合のみ完全変質（合化）とする。
+        """
         transformed = {}
         valid_branches = [b for b in branches if b in cls.BRANCH_MAP]
+        stems = stems or []
 
         sankai_map = {
             ("寅", "卯", "辰"): "木",
@@ -99,17 +116,27 @@ class GogyoEngine:
             ("子", "辰"): "水",
         }
 
+        # 三会・三合の判定
         for combo, target_el in {**sankai_map, **sango_map}.items():
             if all(b in valid_branches for b in combo):
-                for idx, b in enumerate(branches):
-                    if b in combo:
-                        transformed[idx] = target_el
+                has_toushutsu = any(s in cls.EL_STEMS.get(target_el, []) for s in stems)
+                has_getsurei_support = cls.BRANCH_MAP.get(month_branch) == target_el
 
-        if not transformed:
-            for combo, target_el in hankai_map.items():
-                if all(b in valid_branches for b in combo):
+                if has_toushutsu or has_getsurei_support:
                     for idx, b in enumerate(branches):
                         if b in combo:
+                            transformed[idx] = target_el
+
+        # 半合の判定（三会・三合が成立しなかった、または未変換の地支に対する判定）
+        for combo, target_el in hankai_map.items():
+            if all(b in valid_branches for b in combo):
+                has_toushutsu = any(s in cls.EL_STEMS.get(target_el, []) for s in stems)
+                has_getsurei_support = cls.BRANCH_MAP.get(month_branch) == target_el
+
+                if has_toushutsu or has_getsurei_support:
+                    for idx, b in enumerate(branches):
+                        # 既に三会・三合で変換済みの地支は上書きしない
+                        if idx not in transformed and b in combo:
                             transformed[idx] = target_el
 
         return transformed
@@ -125,7 +152,6 @@ class GogyoEngine:
         )
 
         raw_pillars = meishiki_data.get("pillars", [])
-        # トップレベルまたはmetadataのどちらからでも拾えるようにする
         is_unknown = meishiki_data.get("is_time_unknown", False) or meishiki_data.get("metadata", {}).get("time_unknown", False)
         print(f"  - 判定された is_unknown: {is_unknown}")
 
@@ -163,7 +189,8 @@ class GogyoEngine:
         day_stem_el = cls.STEM_MAP[day_stem]
         season = cls._get_season(month_branch)
 
-        transformed_branches = cls._detect_goka(branches)
+        # 天干(stems)および月支(month_branch)を渡して合化の成立条件を判断
+        transformed_branches = cls._detect_goka(branches, stems, month_branch)
 
         raw_element_counts = {el: 0.0 for el in cls.ELEMENTS}
         for s in stems:
@@ -217,7 +244,7 @@ class GogyoEngine:
                     if s_weight < 1.0 and raw_element_counts[z_el] >= 2.5:
                         s_weight = 1.1
 
-                    base_branch_weight = 1.8 if p.get("name") == "月" else 1.2
+                    base_branch_weight = 2.4 if p.get("name") == "月" else 1.2
                     gogyo_scores[z_el] += (
                         base_branch_weight * ratio
                     ) * s_weight
@@ -225,35 +252,71 @@ class GogyoEngine:
         for el in cls.ELEMENTS:
             attacking_el = [k for k, v in cls.KOKU_MAP.items() if v == el][0]
             if gogyo_scores[attacking_el] >= 2.5:
-                has_root = any(
-                    cls.STEM_MAP.get(z_stem) == el
-                    for b in branches
-                    if b in cls.ZOKAN_DETAIL
-                    for z_stem, _ in cls.ZOKAN_DETAIL[b]
-                )
+                has_root = False
+                for idx, b in enumerate(branches):
+                    if b not in cls.ZOKAN_DETAIL:
+                        continue
+                    
+                    # 地支が合化している場合は、合化後の五行が一致するかを判定
+                    if idx in transformed_branches:
+                        if transformed_branches[idx] == el:
+                            has_root = True
+                            break
+                    else:
+                        # 合化していない地支は通常の蔵干を参照
+                        if any(cls.STEM_MAP.get(z_stem) == el for z_stem, _ in cls.ZOKAN_DETAIL[b]):
+                            has_root = True
+                            break
+
                 if not has_root:
                     gogyo_scores[el] *= 0.4
 
+        # --------------------------------------------------
+        # 身強身弱判定ブロック
+        # --------------------------------------------------
         day_el_idx = cls.ELEMENTS.index(day_stem_el)
         hibo_el = day_stem_el
         insei_el = cls.ELEMENTS[(day_el_idx - 1) % 5]
 
-        jitou_score = gogyo_scores[hibo_el] + gogyo_scores[insei_el]
-        itau_score = sum(gogyo_scores.values()) - jitou_score
-
         month_el = cls.BRANCH_MAP[month_branch]
         is_tokurei = month_el == hibo_el or month_el == insei_el
 
-        is_tokuchi = any(
+        # 1. 日干の通根判定（完全無根かチェック）
+        has_day_stem_root = any(
             cls.STEM_MAP.get(z_stem) == day_stem_el
-            for b in branches
+            for idx, b in enumerate(branches)
             if b in cls.ZOKAN_DETAIL
-            for z_stem, _ in cls.ZOKAN_DETAIL[b]
+            for z_stem, _ in (
+                # 合化している場合は変質後の五行を参照、未合化なら通常の蔵干
+                [(cls.STEM_MAP[transformed_branches[idx]], 1.0)] if idx in transformed_branches
+                else cls.ZOKAN_DETAIL[b]
+            )
         )
 
-        if is_tokurei and is_tokuchi:
+        # 2. 印星の過剰判定（例：印星スコアが4.0以上、かつ比劫の2倍を超えている場合）
+        insei_score = gogyo_scores[insei_el]
+        hibo_score = gogyo_scores[hibo_el]
+
+        is_inta_mijaku = False
+        effective_insei_score = insei_score
+
+        # 完全無根 且つ 印星が過剰に強い場合（母慈滅子の発動）
+        if not has_day_stem_root and insei_score >= 4.0 and insei_score > hibo_score * 2:
+            is_inta_mijaku = True
+            # 印星の自党貢献度を減衰（0.2倍にする）
+            effective_insei_score = insei_score * 0.2
+
+        # 3. 実効自党スコアおよび異党スコアの算出
+        jitou_score = hibo_score + effective_insei_score
+        itau_score = sum(gogyo_scores.values()) - (hibo_score + insei_score)
+
+        # 4. 身強身弱の最終判定
+        if is_inta_mijaku:
+            # 特殊フラグが立っている場合は無条件で身弱（印多身弱）とする
+            judgment = "身弱（印多身弱）"
+        elif is_tokurei and has_day_stem_root:
             judgment = "身強"
-        elif not is_tokurei and not is_tokuchi and jitou_score < itau_score * 1.2:
+        elif not is_tokurei and not has_day_stem_root and jitou_score < itau_score * 1.2:
             judgment = "身弱"
         else:
             judgment = "身強" if jitou_score >= itau_score else "身弱"
