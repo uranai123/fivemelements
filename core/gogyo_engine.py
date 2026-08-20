@@ -32,7 +32,6 @@ class GogyoEngine:
         "子": "水",
     }
 
-    # 各五行に対応する天干（透出チェック用）
     EL_STEMS = {
         "木": ["甲", "乙"],
         "火": ["丙", "丁"],
@@ -82,13 +81,6 @@ class GogyoEngine:
 
     @classmethod
     def _detect_goka(cls, branches, stems=None, month_branch=None):
-        """
-        地支の合化（三会・三合・半合）を判定する。
-        【厳格化条件】
-        - 天干への透出（stems内に該当五行が存在）
-        - または、月令（month_branch）の五行と一致
-        のいずれかを満たす場合のみ完全変質（合化）とする。
-        """
         transformed = {}
         valid_branches = [b for b in branches if b in cls.BRANCH_MAP]
         stems = stems or []
@@ -127,7 +119,7 @@ class GogyoEngine:
                         if b in combo:
                             transformed[idx] = target_el
 
-        # 半合の判定（三会・三合が成立しなかった、または未変換の地支に対する判定）
+        # 半合の判定
         for combo, target_el in hankai_map.items():
             if all(b in valid_branches for b in combo):
                 has_toushutsu = any(s in cls.EL_STEMS.get(target_el, []) for s in stems)
@@ -135,7 +127,6 @@ class GogyoEngine:
 
                 if has_toushutsu or has_getsurei_support:
                     for idx, b in enumerate(branches):
-                        # 既に三会・三合で変換済みの地支は上書きしない
                         if idx not in transformed and b in combo:
                             transformed[idx] = target_el
 
@@ -143,17 +134,8 @@ class GogyoEngine:
 
     @classmethod
     def analyze_meishiki_gogyo(cls, meishiki_data):
-        print("=== [DEBUG] analyze_meishiki_gogyo 呼び出し ===")
-        print(
-            f"  - top-level is_time_unknown: {meishiki_data.get('is_time_unknown')}"
-        )
-        print(
-            f"  - metadata time_unknown: {meishiki_data.get('metadata', {}).get('time_unknown')}"
-        )
-
         raw_pillars = meishiki_data.get("pillars", [])
         is_unknown = meishiki_data.get("is_time_unknown", False) or meishiki_data.get("metadata", {}).get("time_unknown", False)
-        print(f"  - 判定された is_unknown: {is_unknown}")
 
         pillars = []
         for p in raw_pillars:
@@ -162,18 +144,14 @@ class GogyoEngine:
             p_branch = p.get("branch")
 
             if is_unknown and p_name == "時":
-                print(f"  -> 【除外】時柱が不明指定のためスキップします")
                 continue
             if p_stem in ["不明", None, ""] or p_branch in ["不明", None, ""]:
-                print(f"  -> 【除外】天干または地支が不明のためスキップ: {p_name}")
                 continue
 
             pillars.append(p)
 
         stems = [p.get("stem") for p in pillars]
         branches = [p.get("branch") for p in pillars]
-        print(f"  -> 最終的な有効天干: {stems}")
-        print(f"  -> 最終的な有効地支: {branches}")
 
         day_stem = None
         month_branch = None
@@ -189,7 +167,6 @@ class GogyoEngine:
         day_stem_el = cls.STEM_MAP[day_stem]
         season = cls._get_season(month_branch)
 
-        # 天干(stems)および月支(month_branch)を渡して合化の成立条件を判断
         transformed_branches = cls._detect_goka(branches, stems, month_branch)
 
         raw_element_counts = {el: 0.0 for el in cls.ELEMENTS}
@@ -249,21 +226,17 @@ class GogyoEngine:
                         base_branch_weight * ratio
                     ) * s_weight
 
+        # 無根衰減処理（相克判定）
         for el in cls.ELEMENTS:
             attacking_el = [k for k, v in cls.KOKU_MAP.items() if v == el][0]
             if gogyo_scores[attacking_el] >= 2.5:
                 has_root = False
                 for idx, b in enumerate(branches):
-                    if b not in cls.ZOKAN_DETAIL:
-                        continue
-                    
-                    # 地支が合化している場合は、合化後の五行が一致するかを判定
                     if idx in transformed_branches:
                         if transformed_branches[idx] == el:
                             has_root = True
                             break
-                    else:
-                        # 合化していない地支は通常の蔵干を参照
+                    elif b in cls.ZOKAN_DETAIL:
                         if any(cls.STEM_MAP.get(z_stem) == el for z_stem, _ in cls.ZOKAN_DETAIL[b]):
                             has_root = True
                             break
@@ -281,38 +254,37 @@ class GogyoEngine:
         month_el = cls.BRANCH_MAP[month_branch]
         is_tokurei = month_el == hibo_el or month_el == insei_el
 
-        # 1. 日干の通根判定（完全無根かチェック）
-        has_day_stem_root = any(
-            cls.STEM_MAP.get(z_stem) == day_stem_el
-            for idx, b in enumerate(branches)
-            if b in cls.ZOKAN_DETAIL
-            for z_stem, _ in (
-                # 合化している場合は変質後の五行を参照、未合化なら通常の蔵干
-                [(cls.STEM_MAP[transformed_branches[idx]], 1.0)] if idx in transformed_branches
-                else cls.ZOKAN_DETAIL[b]
-            )
-        )
+        # 1. 安全な日干通根判定（修正箇所）
+        has_day_stem_root = False
+        for idx, b in enumerate(branches):
+            if idx in transformed_branches:
+                # 合化している場合は変質後の五行を直接判定
+                if transformed_branches[idx] == day_stem_el:
+                    has_day_stem_root = True
+                    break
+            elif b in cls.ZOKAN_DETAIL:
+                # 通常地支は蔵干の五行を判定
+                if any(cls.STEM_MAP.get(z_stem) == day_stem_el for z_stem, _ in cls.ZOKAN_DETAIL[b]):
+                    has_day_stem_root = True
+                    break
 
-        # 2. 印星の過剰判定（例：印星スコアが4.0以上、かつ比劫の2倍を超えている場合）
+        # 2. 印星の過剰判定（母慈滅子）
         insei_score = gogyo_scores[insei_el]
         hibo_score = gogyo_scores[hibo_el]
 
         is_inta_mijaku = False
         effective_insei_score = insei_score
 
-        # 完全無根 且つ 印星が過剰に強い場合（母慈滅子の発動）
         if not has_day_stem_root and insei_score >= 4.0 and insei_score > hibo_score * 2:
             is_inta_mijaku = True
-            # 印星の自党貢献度を減衰（0.2倍にする）
             effective_insei_score = insei_score * 0.2
 
-        # 3. 実効自党スコアおよび異党スコアの算出
+        # 3. 実効スコア算出
         jitou_score = hibo_score + effective_insei_score
         itau_score = sum(gogyo_scores.values()) - (hibo_score + insei_score)
 
         # 4. 身強身弱の最終判定
         if is_inta_mijaku:
-            # 特殊フラグが立っている場合は無条件で身弱（印多身弱）とする
             judgment = "身弱（印多身弱）"
         elif is_tokurei and has_day_stem_root:
             judgment = "身強"
@@ -324,7 +296,6 @@ class GogyoEngine:
         gogyo_balance_rounded = {
             k: round(v, 2) for k, v in gogyo_scores.items()
         }
-        print(f"  -> 計算結果スコア: {gogyo_balance_rounded}")
 
         return {
             "gogyo_balance": gogyo_balance_rounded,
