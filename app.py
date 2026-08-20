@@ -286,9 +286,8 @@ with tab_fortune:
                 st.session_state.ai_appraisal = None
                 st.success("🎉 命式の算出が完了しました！")
             except Exception as e:
-                import traceback
-                st.error(f"計算エラーが発生しました:\n```\n{traceback.format_exc()}\n```")
-                
+                st.error(f"計算エラーが発生しました: {e}")
+
     if st.session_state.meishiki_result:
         meishiki_data = st.session_state.meishiki_result
         st.markdown("---")
