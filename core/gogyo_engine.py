@@ -70,6 +70,57 @@ class GogyoEngine:
         return "春"
 
     @classmethod
+    def _calculate_stem_kango_factors(cls, stems, day_idx):
+        """
+        天干の干合（1対1、妬合、争合、双合など任意の配置）における
+        距離に応じた減衰率を動的に算出する。
+        - 日干: 貪合（束縛）による微減衰（下限 0.70）
+        - 他天干: 合去（無力化）による大幅減衰（下限 0.15）
+        """
+        kango_pairs = {
+            ("甲", "己"), ("己", "甲"),
+            ("乙", "庚"), ("庚", "乙"),
+            ("丙", "辛"), ("辛", "丙"),
+            ("丁", "壬"), ("壬", "丁"),
+            ("戊", "癸"), ("癸", "戊"),
+        }
+
+        n = len(stems)
+        factors = [1.0] * n
+
+        for i in range(n):
+            if stems[i] in ["不明", None, ""]:
+                continue
+            is_day_stem = (i == day_idx)
+
+            for j in range(n):
+                if i == j or stems[j] in ["不明", None, ""]:
+                    continue
+
+                # 干合ペアが存在する場合
+                if (stems[i], stems[j]) in kango_pairs:
+                    distance = abs(i - j)
+                    # 距離に応じた影響度（隣接:1.0 / 1柱離れ:0.5 / 2柱離れ:0.25）
+                    dist_weight = 1.0 if distance == 1 else (0.5 if distance == 2 else 0.25)
+
+                    if is_day_stem:
+                        # 日干は消滅せず「貪合（束縛）」を受ける
+                        decay = 1.0 - (0.15 * dist_weight)
+                        factors[i] *= decay
+                    else:
+                        # 他天干は「合去（無力化）」に向かう
+                        decay = 1.0 - (0.65 * dist_weight)
+                        factors[i] *= decay
+
+            # 安全用の下限値設定（破綻防止）
+            if is_day_stem:
+                factors[i] = max(factors[i], 0.70)
+            else:
+                factors[i] = max(factors[i], 0.15)
+
+        return factors
+
+    @classmethod
     def _detect_goka_bonuses(cls, branches, other_stems, month_branch):
         """
         日干を除外した他天干(年・月・時)および月令による透出検証を行い、
@@ -121,16 +172,19 @@ class GogyoEngine:
         return bonuses
 
     @classmethod
-    def _calculate_clash_factors(cls, branches):
+    def _calculate_clash_details(cls, branches):
         """
-        地支間の対衝(七衝)を検出し、地支間の距離(隣接・隔柱・遠隔)と
-        五行の相剋関係に基づいて減衰係数を動的に算出する。
+        地支間の対衝(七衝)を検出し、
+        - 衝の種類 ('none', 'earth_clash', 'normal_clash')
+        - 地支の基本減衰/旺化係数 (factor)
+        を動的に算出する。
         - 距離1 (隣接)   : 勝者 0.8倍 / 敗者 0.5倍
         - 距離2 (1柱離れ): 勝者 0.9倍 / 敗者 0.75倍
         - 距離3 (年と時) : 勝者 0.95倍 / 敗者 0.9倍
         """
-        factors = [1.0] * len(branches)
         n = len(branches)
+        clash_types = ["none"] * n
+        factors = [1.0] * n
 
         for i in range(n):
             for j in range(i + 1, n):
@@ -138,30 +192,38 @@ class GogyoEngine:
                 if (b1, b2) in cls.OPPOSING_CLASHES:
                     distance = abs(i - j)
                     if distance == 1:
-                        loser_factor = 0.5
-                        winner_factor = 0.8
+                        loser_factor, winner_factor = 0.5, 0.8
                     elif distance == 2:
-                        loser_factor = 0.75
-                        winner_factor = 0.9
+                        loser_factor, winner_factor = 0.75, 0.9
                     else:
-                        loser_factor = 0.9
-                        winner_factor = 0.95
+                        loser_factor, winner_factor = 0.9, 0.95
 
                     el1 = cls.BRANCH_MAP.get(b1)
                     el2 = cls.BRANCH_MAP.get(b2)
 
-                    if cls.KOKU_MAP.get(el1) == el2:
-                        factors[i] *= winner_factor  # el1が勝者
-                        factors[j] *= loser_factor   # el2が敗者
-                    elif cls.KOKU_MAP.get(el2) == el1:
-                        factors[i] *= loser_factor   # el1が敗者
-                        factors[j] *= winner_factor  # el2が勝者
+                    if el1 == "土" and el2 == "土":
+                        # 辰戌・丑未の朋冲 (土旺)
+                        clash_types[i] = "earth_clash"
+                        clash_types[j] = "earth_clash"
+                        # 距離に応じた土旺化倍率（隣接: 1.2倍 / 1柱離れ: 1.1倍 / 2柱離れ: 1.05倍）
+                        e_factor = 1.2 if distance == 1 else (1.1 if distance == 2 else 1.05)
+                        factors[i] *= e_factor
+                        factors[j] *= e_factor
                     else:
-                        # 土どうしの衝 (辰戌, 丑未)
-                        factors[i] *= winner_factor
-                        factors[j] *= winner_factor
+                        # 通常の相剋を伴う衝 (子午, 卯酉, 寅申, 巳亥)
+                        clash_types[i] = "normal_clash"
+                        clash_types[j] = "normal_clash"
+                        if cls.KOKU_MAP.get(el1) == el2:
+                            factors[i] *= winner_factor  # el1が勝者
+                            factors[j] *= loser_factor   # el2が敗者
+                        elif cls.KOKU_MAP.get(el2) == el1:
+                            factors[i] *= loser_factor   # el1が敗者
+                            factors[j] *= winner_factor  # el2が勝者
+                        else:
+                            factors[i] *= winner_factor
+                            factors[j] *= winner_factor
 
-        return factors
+        return clash_types, factors
 
     @classmethod
     def analyze_meishiki_gogyo(cls, meishiki_data):
@@ -185,20 +247,22 @@ class GogyoEngine:
         branches = [p.get("branch") for p in pillars]
 
         day_stem = None
+        day_idx = None
         month_branch = None
         other_stems = []
 
-        for p in pillars:
+        for idx, p in enumerate(pillars):
             p_name = p.get("name")
             p_stem = p.get("stem")
             if p_name == "日":
                 day_stem = p_stem
+                day_idx = idx
             else:
                 other_stems.append(p_stem)  # 日干を除外した「他天干」リスト
             if p_name == "月":
                 month_branch = p.get("branch")
 
-        if not day_stem or not month_branch:
+        if not day_stem or day_idx is None or not month_branch:
             raise ValueError("日干または月支が指定されていません。")
 
         day_stem_el = cls.STEM_MAP[day_stem]
@@ -210,8 +274,10 @@ class GogyoEngine:
             if s in cls.STEM_MAP:
                 raw_element_counts[cls.STEM_MAP[s]] += 1.0
 
-        # 地支カウント(動的距離対衝減衰考慮)
-        clash_factors = cls._calculate_clash_factors(branches)
+        # 地支の衝タイプ・減衰/旺化係数を取得
+        clash_types, clash_factors = cls._calculate_clash_details(branches)
+
+        # 地支カウント(動的距離対衝補正)
         for idx, b in enumerate(branches):
             if b in cls.BRANCH_MAP:
                 target_el = cls.BRANCH_MAP[b]
@@ -219,8 +285,10 @@ class GogyoEngine:
 
         gogyo_scores = {el: 0.0 for el in cls.ELEMENTS}
 
-        # 2. 天干スコア算出 (通根・季節補正)
-        for s in stems:
+        # 2. 天干スコア算出 (通根・季節補正 + 動的干合補正)
+        stem_factors = cls._calculate_stem_kango_factors(stems, day_idx)
+
+        for idx, s in enumerate(stems):
             if s not in cls.STEM_MAP:
                 continue
             s_el = cls.STEM_MAP[s]
@@ -239,14 +307,16 @@ class GogyoEngine:
             if s_weight < 1.0 and raw_element_counts[s_el] >= 2.5:
                 s_weight = 1.1
 
-            gogyo_scores[s_el] += weight * s_weight
+            # 干合による減衰率 (stem_factors[idx]) を適用
+            gogyo_scores[s_el] += weight * s_weight * stem_factors[idx]
 
-        # 3. 地支スコア算出 (全地支の元蔵干計算 + 動的距離対衝減衰)
+        # 3. 地支スコア算出 (全地支の元蔵干計算 + 朋冲・通常衝の分離補正)
         for i, p in enumerate(pillars):
             b = p.get("branch")
             if b not in cls.BRANCH_MAP:
                 continue
 
+            c_type = clash_types[i]
             c_factor = clash_factors[i]
             base_branch_weight = 2.4 if p.get("name") == "月" else 1.2
 
@@ -256,8 +326,19 @@ class GogyoEngine:
                 if s_weight < 1.0 and raw_element_counts[z_el] >= 2.5:
                     s_weight = 1.1
 
-                # 元蔵干のスコア計算 (動的距離対衝減衰を乗算)
-                gogyo_scores[z_el] += (base_branch_weight * ratio * c_factor) * s_weight
+                # 衝の種類に応じた蔵干補正倍率の決定
+                if c_type == "earth_clash":
+                    if z_el == "土":
+                        # 本気（土）は衝によって土旺化 (1.2倍等)
+                        z_clash_mult = c_factor
+                    else:
+                        # 非土蔵干（中気・余気）は激突で破砕・減衰 (80%カット)
+                        z_clash_mult = 0.2
+                else:
+                    # 通常の相剋衝（勝者/敗者係数を適用）
+                    z_clash_mult = c_factor
+
+                gogyo_scores[z_el] += (base_branch_weight * ratio * z_clash_mult) * s_weight
 
         # 4. 合化ボーナススコアの加算 (ハイブリッド方式)
         goka_bonuses = cls._detect_goka_bonuses(branches, other_stems, month_branch)
