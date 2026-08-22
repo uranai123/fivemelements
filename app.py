@@ -472,8 +472,14 @@ with tab_fortune:
             
             if analysis:
                 st.metric(label="命式・身弱身強判定", value=f"【 {analysis.get('judgment')} 】")
+                
+                # ★印多身弱などの注釈がある場合のみ描画
+                if analysis.get("judgment_note"):
+                    st.caption(f"＊ {analysis.get('judgment_note')}")
+                    
                 if st.session_state.is_time_unknown:
                     st.caption("⚠️ 時刻不明（三柱）のため、時柱の五行エネルギーは除外して計算されています。")
+                    
                 st.markdown(f"**日干の五行:** `{analysis.get('day_stem_element')}`")
                 
                 total_score = analysis.get("jitou_score", 0) + analysis.get("itau_score", 0)
