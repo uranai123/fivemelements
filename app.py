@@ -24,6 +24,43 @@ st.set_page_config(
     layout="wide"
 )
 
+# ==========================================
+# 🔒 パスワード認証による自分専用化（ここに挿入）
+# ==========================================
+def check_password():
+    """簡単なパスワード認証"""
+    def password_entered():
+        if st.session_state["password"] == "525":  # ← お好みのパスワードに変更してください
+            st.session_state["password_correct"] = True
+            del st.session_state["password"]
+        else:
+            st.session_state["password_correct"] = False
+
+    if "password_correct" not in st.session_state:
+        st.title("🔒 認証が必要です")
+        st.text_input(
+            "パスワードを入力してください",
+            type="password",
+            on_change=password_entered,
+            key="password"
+        )
+        return False
+    elif not st.session_state["password_correct"]:
+        st.text_input(
+            "パスワードを入力してください",
+            type="password",
+            on_change=password_entered,
+            key="password"
+        )
+        st.error("パスワードが違います")
+        return False
+    else:
+        return True
+
+if not check_password():
+    st.stop()  # 認証が成功するまで、ここでアプリの処理を完全にストップします
+# ==========================================
+
 # --- ⚙️ ユーティリティ・補助関数の定義 ---
 
 @st.cache_data
@@ -706,10 +743,10 @@ with tab_column:
             "url": "https://note.com/uranai123"
         },
         {
-            "log": "対人システム監査ログ #9",
-            "tag": "⚔️ 正義・七殺",
-            "title": "なぜ「正義」を振りかざす人ほど自滅するのか？",
-            "sub": "身弱の七殺が振るう、鞘（さや）なき諸刃の剣〜七殺編①",
+            "log": "対人システム監査ログ #4",
+            "tag": "🕯 婚活・アニムス",
+            "title": "なぜ「ハイスペ婚活女子」は初対面で絶賛され「2回目」で即切りされるのか？",
+            "sub": "「火多金熔」が招く皇帝アニムス暴走の正体",
             "url": "https://note.com/uranai123"
         },
         {
@@ -720,10 +757,10 @@ with tab_column:
             "url": "https://note.com/uranai123"
         },
         {
-            "log": "対人システム監査ログ #8",
-            "tag": "🏢 組織・官星",
-            "title": "なぜあの若手は相談してこないのか？",
-            "sub": "官星強旺が生む「エラー回避型」の行動心理",
+            "log": "対人システム監査ログ #2",
+            "tag": "🎓 心理・クラッシュ",
+            "title": "なぜ「高学歴女子」は突然人生を全壊させるのか？",
+            "sub": "「印星過多」が招くシステムクラッシュの正体",
             "url": "https://note.com/uranai123"
         },
         {
