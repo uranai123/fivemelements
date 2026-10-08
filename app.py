@@ -127,7 +127,6 @@ def generate_fortune_telling_ai(meishiki_json, exam_spec, output_spec):
                 contents=user_input,
                 config={
                     "system_instruction": system_instruction, 
-                    "temperature": 0.3
                 }
             )
             return response.text
