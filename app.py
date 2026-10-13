@@ -112,7 +112,7 @@ def generate_fortune_telling_ai(meishiki_json, exam_spec, output_spec):
     
     # 実際の混雑状況を踏まえて最適化した優先順位
     model_priority = [
-        "gemini-3.5-flash",       # 1番手：実績のある最新モデル
+        "gemini-3.6-flash",       # 1番手：実績のある最新モデル
         "gemini-2.0-flash",       # 2番手：標準の安定用
         "gemini-3.1-flash-lite"   # 3番手：究極のセーフティ
     ]
